@@ -5,6 +5,7 @@
 #include "core/operator_set.hpp"
 #include "exceptions.hpp"
 #include "openvino/frontend/exception.hpp"
+#include "openvino/op/add.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/op/convert.hpp"
 #include "openvino/op/exp.hpp"
@@ -21,6 +22,7 @@
 #include "openvino/op/reduce_sum.hpp"
 #include "openvino/op/shape_of.hpp"
 #include "openvino/op/squeeze.hpp"
+#include "openvino/op/subtract.hpp"
 #include "utils/common.hpp"
 
 using namespace ov::op;
@@ -159,9 +161,16 @@ ov::OutputVector reduce_log_sum(const ov::frontend::onnx::Node& node) {
 }
 
 ov::OutputVector reduce_log_sum_exp(const ov::frontend::onnx::Node& node) {
-    const auto exp_node = std::make_shared<v0::Exp>(node.get_ov_inputs().at(0));
-    const ov::Output<ov::Node> sum_node = make_ov_reduction_op<v1::ReduceSum>(node, exp_node, supported_types_v1);
-    return {std::make_shared<v0::Log>(sum_node)};
+    const auto max_ = std::make_shared<v1::ReduceMax>(node.get_ov_inputs().at(0), get_reduction_axes_from_attr(node), 1);
+    const auto normalised = std::make_shared<ov::op::v1::Subtract>(node.get_ov_inputs().at(0), max_);
+    const auto exp_node = std::make_shared<v0::Exp>(normalised);
+    const auto sum_node = make_ov_reduction_op<v1::ReduceSum>(node, exp_node, supported_types_v1);
+    const auto log = std::make_shared<v0::Log>(sum_node);
+    if (!node.get_attribute_value<std::int64_t>("keepdims", 1)) {
+        const auto max_squeezed = std::make_shared<v0::Squeeze>(max_, get_reduction_axes_from_attr(node));
+        return {std::make_shared<ov::op::v1::Add>(log, max_squeezed)};
+    }
+    return {std::make_shared<ov::op::v1::Add>(log, max_)};
 }
 
 ov::OutputVector reduce_l1(const ov::frontend::onnx::Node& node) {
@@ -234,9 +243,16 @@ ov::OutputVector reduce_l2(const Node& node) {
 }
 
 ov::OutputVector reduce_log_sum_exp(const ov::frontend::onnx::Node& node) {
-    const auto exp_node = std::make_shared<v0::Exp>(node.get_ov_inputs().at(0));
-    const ov::Output<ov::Node> sum_node = make_ov_reduction_op<v1::ReduceSum>(node, exp_node, supported_types_v2);
-    return {std::make_shared<v0::Log>(sum_node)};
+    const auto max_ = std::make_shared<v1::ReduceMax>(node.get_ov_inputs().at(0), get_reduction_axes_from_attr(node), 1);
+    const auto normalised = std::make_shared<ov::op::v1::Subtract>(node.get_ov_inputs().at(0), max_);
+    const auto exp_node = std::make_shared<v0::Exp>(normalised);
+    const auto sum_node = make_ov_reduction_op<v1::ReduceSum>(node, exp_node, supported_types_v2);
+    const auto log = std::make_shared<v0::Log>(sum_node);
+    if (!node.get_attribute_value<std::int64_t>("keepdims", 1)) {
+        const auto max_squeezed = std::make_shared<v0::Squeeze>(max_, get_reduction_axes_from_attr(node));
+        return {std::make_shared<ov::op::v1::Add>(log, max_squeezed)};
+    }
+    return {std::make_shared<ov::op::v1::Add>(log, max_)};
 }
 
 ov::OutputVector reduce_max(const ov::frontend::onnx::Node& node) {
@@ -285,10 +301,16 @@ ov::OutputVector reduce_l1(const Node& node) {
 }
 
 ov::OutputVector reduce_log_sum_exp(const ov::frontend::onnx::Node& node) {
-    const auto exp_node = std::make_shared<v0::Exp>(node.get_ov_inputs().at(0));
-    const ov::Output<ov::Node> sum_node =
-        make_ov_reduction_op<v1::ReduceSum>(node, exp_node, supported_types_v3, false);
-    return {std::make_shared<v0::Log>(sum_node)};
+    const auto max_ = std::make_shared<v1::ReduceMax>(node.get_ov_inputs().at(0), get_reduction_axes_from_input(node), 1);
+    const auto normalised = std::make_shared<ov::op::v1::Subtract>(node.get_ov_inputs().at(0), max_);
+    const auto exp_node = std::make_shared<v0::Exp>(normalised);
+    const ov::Output<ov::Node> sum_node = make_ov_reduction_op<v1::ReduceSum>(node, exp_node, supported_types_v3, false);
+    const auto log = std::make_shared<v0::Log>(sum_node);
+    if (!node.get_attribute_value<std::int64_t>("keepdims", 1)) {
+        const auto max_squeezed = std::make_shared<v0::Squeeze>(max_, get_reduction_axes_from_input(node));
+        return {std::make_shared<ov::op::v1::Add>(log, max_squeezed)};
+    }
+    return {std::make_shared<ov::op::v1::Add>(log, max_)};
 }
 
 ov::OutputVector reduce_max(const ov::frontend::onnx::Node& node) {
